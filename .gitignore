@@ -1,6 +1,33 @@
-node_modules/
-dist/
-*.js.map
-.env
-logs/
+# Java / Maven build artifacts
+target/
+*.class
+*.jar
+*.war
+*.ear
+
+# Maven wrapper
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE files
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+*.eclipse
+.classpath
+.project
+.settings/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
 *.log
+logs/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp

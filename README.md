@@ -1,86 +1,125 @@
-# BotBuy2 — Habbo Marketplace Auto-Buyer
+# BotBuy – Habbo Marketplace Auto-Buyer (G-Earth Extension)
 
-Bot en TypeScript/Node.js que se conecta a G.Earth y compra automáticamente furnis en el marketplace de Habbo cuando el precio cumple el criterio configurado.
+Una extensión de [G-Earth](https://github.com/sirjonasxx/G-Earth) escrita en **Java** que:
+
+1. Consulta **[habboapi.site](https://habboapi.site/)** para obtener el precio medio de la _bufanda de serpiente_ en el mercadillo.
+2. Si el precio es **≤ 5 créditos**, busca automáticamente el furni en el mercadillo de Habbo.
+3. Compra automáticamente la primera oferta encontrada cuyo precio sea **≤ 5 créditos**.
+
+---
 
 ## Requisitos
 
-- [Node.js](https://nodejs.org/) 18+
-- [G.Earth](https://github.com/sirjonasxx/G-Earth) ejecutándose y conectado al juego
+| Herramienta | Versión mínima |
+|-------------|----------------|
+| Java JDK    | 11+            |
+| Maven       | 3.8+           |
+| G-Earth     | 1.5+           |
 
-## Instalación
-
-```bash
-npm install
-```
-
-## Compilar
-
-```bash
-npm run build
-```
-
-## Uso
-
-1. Abre G.Earth y conéctate a Habbo Hotel.
-2. Asegúrate de que G.Earth esté escuchando en el puerto 9092 (predeterminado).
-3. Ejecuta el bot:
-
-```bash
-npm start
-```
-
-O en modo de desarrollo (sin compilar):
-
-```bash
-npm run dev
-```
-
-## Flujo de ejecución
-
-1. **Conexión a G.Earth** — El bot se conecta como extensión de G.Earth en `localhost:9092`.
-2. **Consulta de API** — Consulta `https://habboapi.site/api/marketplace/snake_scarf` para obtener el precio actual del furni *bufanda de serpiente*.
-3. **Validación de precio** — Si el precio de la API es ≤ 5 créditos, continúa.
-4. **Búsqueda en mercadillo** — Envía el paquete `GetMarketplaceOffers` con la búsqueda `"bufanda de serpiente"`.
-5. **Compra automática** — Si hay una oferta con precio ≤ 5 créditos, envía el paquete `BuyMarketplaceOffer`.
-6. **Log** — Registra cada paso y el resultado de la compra.
+---
 
 ## Configuración
 
-Edita `src/config.ts` para ajustar:
+Edita el archivo `src/main/resources/config.properties` antes de compilar:
 
-| Parámetro | Descripción | Valor predeterminado |
-|-----------|-------------|----------------------|
-| `gearthPort` | Puerto de G.Earth | `9092` |
-| `furniApiKey` | Clave del furni en la API | `snake_scarf` |
-| `furniSearchName` | Nombre en el mercadillo de Habbo | `bufanda de serpiente` |
-| `maxPrice` | Precio máximo en créditos | `5` |
-| `maxRetries` | Intentos de reintento | `3` |
-| `retryDelay` | Espera entre reintentos (ms) | `5000` |
+```properties
+# Nombre del furni para buscar en habboapi.site
+furni.name=bufanda de serpiente
+
+# Nombre de búsqueda en el mercadillo de Habbo
+furni.search.query=bufanda de serpiente
+
+# Precio máximo (en créditos) — el bot compra si precio <= max.price
+max.price=5
+
+# Código del hotel para habboapi.site (com, de, es, fi, fr, it, nl, br, tr)
+api.hotel=es
+
+# Segundos entre cada ciclo de búsqueda (mínimo recomendado: 10)
+search.interval.seconds=10
+```
+
+---
+
+## Compilación
+
+```bash
+mvn clean package -DskipTests
+```
+
+El archivo resultante estará en `target/BotBuy-1.0.0.jar`.
+
+---
+
+## Uso
+
+1. Abre **G-Earth** y conéctate a Habbo Hotel.
+2. En la pestaña **Extra**, añade la extensión y apunta al JAR generado:
+   ```
+   target/BotBuy-1.0.0.jar
+   ```
+   O ejecuta directamente en la terminal:
+   ```bash
+   java -jar target/BotBuy-1.0.0.jar
+   ```
+3. La extensión aparecerá en G-Earth. Actívala con el botón verde.
+4. El bot comenzará a consultar la API y a buscar en el mercadillo automáticamente.
+
+---
+
+## Flujo de funcionamiento
+
+```
+Cada {search.interval.seconds} segundos:
+  ┌─ Consulta habboapi.site
+  │  GET /api/market/history?name=bufanda+de+serpiente&hotel=es&days=7
+  │
+  ├─ ¿averagePrice <= max.price?
+  │   SÍ ──► Envía GetMarketplaceOffers (búsqueda en Habbo)
+  │   NO ──► Espera el siguiente ciclo
+  │
+  └─ Recibe MarketPlaceOffers
+       └─ Para cada oferta:
+            ├─ ¿precio <= max.price?
+            │   SÍ ──► Envía BuyMarketplaceOffer (compra)
+            └─ NO  ──► Continúa con la siguiente oferta
+```
+
+---
+
+## Paquetes de red utilizados
+
+| Dirección | Nombre del paquete          | Descripción                        |
+|-----------|-----------------------------|------------------------------------|
+| Outgoing  | `GetMarketplaceOffers`      | Búsqueda en el mercadillo          |
+| Incoming  | `MarketPlaceOffers`         | Respuesta con las ofertas          |
+| Outgoing  | `BuyMarketplaceOffer`       | Envío de la compra                 |
+| Incoming  | `MarketplaceBuyOfferResult` | Confirmación de la compra          |
+
+---
+
+## Notas
+
+- El bot **no** realiza ninguna compra si el precio de la API supera el límite configurado, evitando búsquedas innecesarias.
+- La extensión funciona con el cliente moderno de Habbo (no Flash), que es el que G-Earth soporta actualmente.
+- Si deseas cambiar el furni objetivo, simplemente actualiza `furni.name` y `furni.search.query` en `config.properties` y recompila.
+
+---
 
 ## Estructura del proyecto
 
 ```
-src/
-├── main.ts                  # Punto de entrada
-├── config.ts                # Configuración
-├── bot.ts                   # Orquestador principal
-├── api/
-│   └── habboApi.ts          # Cliente de la API de habboapi.site
-├── gearth/
-│   ├── connection.ts        # Conexión TCP a G.Earth (protocolo de extensiones)
-│   └── protocol.ts          # Construcción y parseo de paquetes Habbo
-└── marketplace/
-    ├── searcher.ts          # Búsqueda en el mercadillo
-    └── buyer.ts             # Lógica de compra
+BotBuy/
+├── pom.xml                                   # Build Maven
+├── src/
+│   └── main/
+│       ├── java/com/botbuy/
+│       │   ├── BotBuyExtension.java          # Clase principal (G-Earth extension)
+│       │   ├── api/
+│       │   │   └── HabboApiClient.java       # Cliente de habboapi.site
+│       │   └── marketplace/
+│       │       └── MarketplaceOffer.java     # Modelo de oferta del mercadillo
+│       └── resources/
+│           └── config.properties             # Configuración
+└── README.md
 ```
-
-## Paquetes Habbo utilizados
-
-| Paquete | Header | Dirección | Descripción |
-|---------|--------|-----------|-------------|
-| `GetMarketplaceOffers` | 1268 | Saliente | Busca ofertas por nombre |
-| `MarketPlaceOffers` | 1058 | Entrante | Lista de ofertas devuelta por el servidor |
-| `BuyMarketplaceOffer` | 3450 | Saliente | Compra una oferta por su ID |
-| `MarketplaceBuyOfferResult` | 527 | Entrante | Confirmación de compra |
-
-> **Nota:** Los headers de paquetes entrantes pueden variar entre versiones del cliente. Si la búsqueda no responde, ajusta `packetHeaders.marketPlaceOffers` y `packetHeaders.marketplaceBuyOfferResult` en `src/config.ts`.
