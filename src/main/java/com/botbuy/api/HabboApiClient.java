@@ -3,14 +3,13 @@ package com.botbuy.api;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.net.URI;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.net.URLEncoder;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.util.OptionalDouble;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -40,18 +39,13 @@ public class HabboApiClient {
 
     private static final String BASE_URL = "https://habboapi.site";
     private static final String MARKET_HISTORY_PATH = "/api/market/history";
-    private static final int CONNECT_TIMEOUT_SECONDS = 10;
-    private static final int REQUEST_TIMEOUT_SECONDS = 15;
+    private static final int CONNECT_TIMEOUT_MS = 10000;
+    private static final int READ_TIMEOUT_MS = 15000;
 
-    private final HttpClient httpClient;
     private final String hotel;
 
     public HabboApiClient(String hotel) {
         this.hotel = hotel;
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS))
-                .followRedirects(HttpClient.Redirect.NORMAL)
-                .build();
     }
 
     /**
@@ -61,41 +55,52 @@ public class HabboApiClient {
      * @return the average marketplace price in credits, or -1 if not found / API error
      */
     public int getAverageMarketplacePrice(String furniName) {
+        HttpURLConnection conn = null;
         try {
-            String encodedName = URLEncoder.encode(furniName, StandardCharsets.UTF_8);
-            String url = BASE_URL + MARKET_HISTORY_PATH
+            // URLEncoder.encode(String, String) throws UnsupportedEncodingException for
+            // unknown charsets, but UTF-8 is guaranteed by the Java specification to always
+            // be supported, so this exception will never occur in practice.
+            String encodedName = URLEncoder.encode(furniName, "UTF-8");
+            String urlString = BASE_URL + MARKET_HISTORY_PATH
                     + "?name=" + encodedName
                     + "&hotel=" + hotel
                     + "&days=7";
 
-            LOGGER.info("[HabboAPI] Querying: " + url);
+            LOGGER.info("[HabboAPI] Querying: " + urlString);
 
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .timeout(Duration.ofSeconds(REQUEST_TIMEOUT_SECONDS))
-                    .header("Accept", "application/json")
-                    .header("User-Agent", "BotBuy/1.0")
-                    .GET()
-                    .build();
+            URL url = new URL(urlString);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setRequestProperty("Accept", "application/json");
+            conn.setRequestProperty("User-Agent", "BotBuy/1.0");
+            conn.setInstanceFollowRedirects(true);
 
-            HttpResponse<String> response = httpClient.send(request,
-                    HttpResponse.BodyHandlers.ofString());
-
-            if (response.statusCode() != 200) {
-                LOGGER.warning("[HabboAPI] HTTP " + response.statusCode()
-                        + " for furni: " + furniName);
+            int statusCode = conn.getResponseCode();
+            if (statusCode != 200) {
+                LOGGER.warning("[HabboAPI] HTTP " + statusCode + " for furni: " + furniName);
                 return -1;
             }
 
-            return parseAveragePrice(response.body(), furniName);
+            StringBuilder sb = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    sb.append(line);
+                }
+            }
 
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            LOGGER.log(Level.WARNING, "[HabboAPI] Request interrupted", e);
-            return -1;
+            return parseAveragePrice(sb.toString(), furniName);
+
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "[HabboAPI] Error querying price for: " + furniName, e);
             return -1;
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
         }
     }
 
@@ -109,7 +114,7 @@ public class HabboApiClient {
     private int parseAveragePrice(String jsonBody, String furniName) {
         try {
             JSONArray items = new JSONArray(jsonBody);
-            if (items.isEmpty()) {
+            if (items.length() == 0) {
                 LOGGER.warning("[HabboAPI] No results found for: " + furniName);
                 return -1;
             }
@@ -133,7 +138,7 @@ public class HabboApiClient {
 
             // Fallback: use the most recent data point from history
             JSONArray history = marketData.optJSONArray("history");
-            if (history != null && !history.isEmpty()) {
+            if (history != null && history.length() > 0) {
                 // history entries: [avgPrice, soldItems, creditSum, openOffers, timestamp]
                 JSONArray latestEntry = history.getJSONArray(history.length() - 1);
                 int recentAvgPrice = latestEntry.optInt(0, -1);
