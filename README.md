@@ -12,7 +12,7 @@ Una extensión de [G-Earth](https://github.com/sirjonasxx/G-Earth) escrita en **
 
 | Herramienta | Versión mínima |
 |-------------|----------------|
-| Java JDK    | 11+            |
+| Java JDK    | 8+             |
 | Maven       | 3.8+           |
 | G-Earth     | 1.5+           |
 
